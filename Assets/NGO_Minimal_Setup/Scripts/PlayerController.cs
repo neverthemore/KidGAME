@@ -1,107 +1,47 @@
-using Unity.VisualScripting;
+using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
-[RequireComponent(typeof(CharacterController))]
-
-public class PlayerController : MonoBehaviour
+public class PlayerMovement : NetworkBehaviour
 {
-    public float speed = 7.5f;
-    public float jumpSpeed = 8.0f;
-    public float gravity = 20.0f;
-    public Camera playerCamera;
-    public float lookSpeed = 2.0f;
-    public float lookXLimit = 45.0f;
-    public AudioSource footstepSound;
-  
-    private float originalHeight;
-    public float crouchHeight = 0.5f;
-    private float normalFOV;
-    private float zoomedFOV = 30f; 
-    private bool isZoomed = false;
+    [SerializeField] private float _speed = 5f;
+    [SerializeField] private float _lookSensitivity = 2f;
+    private CharacterController _controller;
+    private PlayerInput _playerInput;
+    private Transform _cameraTransform;
 
-    public bool canMove = true;
-
-    CharacterController characterController;
-    public Vector3 moveDirection;
-    private bool isCrouching = false;
-    Vector2 rotation = Vector2.zero;
-
-    
-
-    void Start()
+    private void Awake()
     {
-        originalHeight = GetComponent<CharacterController>().height;
-        characterController = GetComponent<CharacterController>();  
-        Cursor.lockState = CursorLockMode.Locked;
-        rotation.y = transform.eulerAngles.y;
-       
-        if (playerCamera == null)
-        {
-            Debug.LogError("PlayerCamera is not assigned.");
-        }
-        normalFOV = playerCamera.fieldOfView;
-    }
-        void Update()
-   {
-        if (characterController.isGrounded)
-        {
-            if (Input.GetKeyDown(KeyCode.X))
-            {
-                isCrouching = !isCrouching;
-
-                if (isCrouching)
-                {
-                    GetComponent<CharacterController>().height = crouchHeight;
-                    speed = 6f;
-                }
-                else
-                {
-                    GetComponent<CharacterController>().height = originalHeight;
-                    speed = 7.5f;
-                }
-            }
-
-            Vector3 forward = transform.TransformDirection(Vector3.forward);
-            Vector3 right = transform.TransformDirection(Vector3.right);
-            float curSpeedX = canMove ? speed * Input.GetAxis("Vertical") : 0;
-            float curSpeedY = canMove ? speed * Input.GetAxis("Horizontal") : 0;
-            moveDirection = (forward * curSpeedX) + (right * curSpeedY);
-
-            if (Input.GetButton("Jump") && canMove)
-            {
-                moveDirection.y = jumpSpeed;
-            }
-        }
-
-        moveDirection.y -= gravity * Time.deltaTime;
-
-        
-        characterController.Move(moveDirection * Time.deltaTime);
-
-        if (canMove)
-        {
-            rotation.y += Input.GetAxis("Mouse X") * lookSpeed;
-            rotation.x += -Input.GetAxis("Mouse Y") * lookSpeed;
-            rotation.x = Mathf.Clamp(rotation.x, -lookXLimit, lookXLimit);
-            playerCamera.transform.localRotation = Quaternion.Euler(rotation.x, 0, 0);
-            transform.eulerAngles = new Vector2(0, rotation.y);
-        }
-
-        PlayFootstepSound();
-   
-
-
+        _controller = GetComponent<CharacterController>();
+        _playerInput = GetComponent<PlayerInput>();
+        _cameraTransform = GetComponentInChildren<Camera>().transform;
     }
 
+    private void Update()
+    {
+        // Работает только у владельца объекта
+        if (!IsOwner) return;
 
+        // Движение
+        Vector2 moveInput = _playerInput.actions["Move"].ReadValue<Vector2>();
+        Vector3 move = transform.forward * moveInput.y + transform.right * moveInput.x;
+        _controller.SimpleMove(move * _speed);
 
-    
-    void PlayFootstepSound()
-        {
-            if (characterController.isGrounded && characterController.velocity.magnitude > 0 && !footstepSound.isPlaying)
-            {
-                footstepSound.Play();
-            }
-        }
-    
+        // Вращение камеры
+        Vector2 lookInput = _playerInput.actions["Look"].ReadValue<Vector2>();
+        RotateCamera(lookInput);
+    }
+
+    private void RotateCamera(Vector2 lookInput)
+    {
+        // Вертикальный поворот камеры
+        float verticalRotation = lookInput.y * _lookSensitivity;
+        float newXRotation = _cameraTransform.localEulerAngles.x - verticalRotation;
+        newXRotation = Mathf.Clamp(newXRotation, -90f, 90f);
+        _cameraTransform.localEulerAngles = new Vector3(newXRotation, 0, 0);
+
+        // Горизонтальный поворот всего игрока
+        float horizontalRotation = lookInput.x * _lookSensitivity;
+        transform.Rotate(0, horizontalRotation, 0);
+    }
 }
